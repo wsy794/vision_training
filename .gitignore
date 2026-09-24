@@ -1,0 +1,17 @@
+# 编译产物
+build/
+*.o
+*.a
+*.so
+CMakeCache.txt
+CMakeFiles/
+
+# VSCode 本地配置（包含你电脑的绝对路径，不需要上传）
+.vscode/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 如果视频文件太大（超过 100MB），取消下面这行的注释（把 # 去掉），把视频也忽略掉
+# *.mp4
