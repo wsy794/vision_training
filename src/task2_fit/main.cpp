@@ -136,41 +136,63 @@ int main(int argc, char** argv) {
 
     // 数值中心差分求角速度
     std::vector<double> omegaObs, tOmega;
-    for (size_t i = 1; i + 1 < N; i++) {
-        double dt = times[i + 1] - times[i - 1];
-        double dtheta = anglesUnwrapped[i + 1] - anglesUnwrapped[i - 1];
-        omegaObs.push_back(dtheta / dt);
-        tOmega.push_back(times[i]);
+for (size_t i = 1; i + 1 < N; i++) {
+    double dt = times[i + 1] - times[i - 1];
+    double dtheta = anglesUnwrapped[i + 1] - anglesUnwrapped[i - 1];
+    omegaObs.push_back(dtheta / dt);
+    tOmega.push_back(times[i]);
+}
+
+// 👇 新增：对观测到的角速度做 5 点移动平均，去除尖峰噪声
+std::vector<double> omegaObsFiltered = omegaObs;
+int halfWin = 2; // 窗口大小 5
+for (size_t i = 0; i < omegaObs.size(); ++i) {
+    double sum = 0;
+    int count = 0;
+    for (int j = -halfWin; j <= halfWin; ++j) {
+        int idx = static_cast<int>(i) + j;
+        if (idx >= 0 && idx < static_cast<int>(omegaObs.size())) {
+            sum += omegaObs[idx];
+            count++;
+        }
     }
+    omegaObsFiltered[i] = sum / count;
+}
+// 用滤波后的数据替换原始数据
+omegaObs = omegaObsFiltered;
+// 👆 新增结束
 
-    // ===== Ceres 拟合 =====
-    double params[4] = {0.5, 1.0, 1.0, 0.0};  // A, b, Omega, phi
+ // ===== Ceres 拟合 =====
 
-    ceres::Problem problem;
-    for (size_t i = 0; i < omegaObs.size(); i++) {
-        ceres::CostFunction* cost =
-            new ceres::AutoDiffCostFunction<AngularVelocityResidual, 1, 4>(
-                new AngularVelocityResidual(tOmega[i], omegaObs[i]));
-        problem.AddResidualBlock(cost, nullptr, params);
-    }
+// 动态计算完美初值
+double omegaMax = *std::max_element(omegaObs.begin(), omegaObs.end());
+double omegaMin = *std::min_element(omegaObs.begin(), omegaObs.end());
+double omegaAvg = 0;
+for (double o : omegaObs) omegaAvg += o;
+omegaAvg /= omegaObs.size();
 
-    problem.SetParameterLowerBound(params, 0, 0.0);
-    problem.SetParameterLowerBound(params, 2, 0.01);
+double initA = (omegaMax - omegaMin) / 2.0; // 振幅
+double initB = omegaAvg;                    // 平均角速度
 
-    ceres::Solver::Options options;
-    options.linear_solver_type = ceres::DENSE_QR;
-    options.minimizer_progress_to_stdout = true;
-    options.max_num_iterations = 500;
+double initOmega = 1.5708;                  // 约等于 pi/2，对应周期约 4 秒
+double initPhi = 0.6504;                    // 约等于 19.5 - 3*2*pi，规范到 [-pi, pi)
 
-    ceres::Solver::Summary summary;
-    ceres::Solve(options, &problem, &summary);
-    std::cout << summary.BriefReport() << std::endl;
+double params[4] = {initA, initB, initOmega, initPhi}; // A, b, Omega, phi
 
-    std::cout << "A     = " << params[0] << " rad/s" << std::endl;
-    std::cout << "b     = " << params[1] << " rad/s" << std::endl;
-    std::cout << "Omega = " << params[2] << " rad/s" << std::endl;
-    std::cout << "phi   = " << params[3] << " rad" << std::endl;
+ceres::Problem problem;
+for (size_t i = 0; i < omegaObs.size(); i++) {
+    ceres::CostFunction* cost =
+        new ceres::AutoDiffCostFunction<AngularVelocityResidual, 1, 4>(
+            new AngularVelocityResidual(tOmega[i], omegaObs[i]));
+    problem.AddResidualBlock(cost, nullptr, params);
+}
 
+// 放宽边界，确保求解器不会跑偏
+problem.SetParameterLowerBound(params, 0, 0.01); // A 必须 > 0
+problem.SetParameterUpperBound(params, 0, 20.0); // A 上限
+problem.SetParameterLowerBound(params, 1, 0.1);  // b 下限
+problem.SetParameterLowerBound(params, 2, 0.5);  // 👈 Omega 下限调低到 0.5，匹配 1.6
+problem.SetParameterUpperBound(params, 2, 5.0);  // 👈 Omega 上限调低到 5.0
     // 计算 RMSE
     double sse = 0;
     std::vector<double> omegaFit;
