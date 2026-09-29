@@ -174,8 +174,8 @@ omegaAvg /= omegaObs.size();
 double initA = (omegaMax - omegaMin) / 2.0; // 振幅
 double initB = omegaAvg;                    // 平均角速度
 
-double initOmega = 1.5708;                  // 约等于 pi/2，对应周期约 4 秒
-double initPhi = 0.6504;                    // 约等于 19.5 - 3*2*pi，规范到 [-pi, pi)
+double initOmega = 1.5708;                  // 频率参数初值
+double initPhi = 0.6504;                    // 相位初值
 
 double params[4] = {initA, initB, initOmega, initPhi}; // A, b, Omega, phi
 
